@@ -1,31 +1,35 @@
 # Time Note · 时间便签
 
-<img src="logo.png" alt="Time Note" width="160">
+<img src="design/assets/time-note-logo-v3.png" alt="Time Note" width="140">
 
-一个本地优先的 Mac 时间便签。支持并发计时、独立番茄、补记、日览／周览、分类时长和未完成 Todo 跨天延续。无需账户或服务器，时间记录保存在自己的 Mac 上。
-
-**[下载 1.1.5 预发布版](https://github.com/Jiang59991/time-note/releases/tag/v1.1.5)** · [使用与安装说明](DOWNLOAD.md) · [问题反馈](https://github.com/Jiang59991/time-note/issues)
+一个轻量的 Mac 时间便签：记录每天做了什么，用日览和周览查看时间分布。支持并发计时、番茄钟、补记和 Todo；数据保存在本机，无需注册。
 
 ## 下载与安装
 
-1. 打开上方 Release 链接。
-2. 在 Assets 中下载 `TimeNote-1.1.5-macOS-universal.zip`。
-3. 解压后将 `Time Note.app` 拖入“应用程序”目录。
+**[↓ 直接下载 Mac 安装包](https://github.com/Jiang59991/time-note/releases/download/v1.1.5/TimeNote-1.1.5-macOS-universal.zip)** · [Release 与版本说明](https://github.com/Jiang59991/time-note/releases/tag/v1.1.5)
 
-支持 macOS 14+，安装包包含 Apple Silicon 与 Intel 双架构。当前实机验证为 Apple Silicon / macOS 26.2；Intel 与 macOS 14 尚未实机验证。当前更新方式为手动下载新版本。
+1. 点击上方下载，解压 ZIP。
+2. 把 **Time Note.app** 拖进“应用程序”文件夹，然后双击打开。
+3. 如提示开发者无法验证，确认下载来自本仓库后，可按 [Apple 官方说明](https://support.apple.com/zh-cn/102445)，到“系统设置 → 隐私与安全性”中为此 App 选择“仍要打开”（如系统提供该选项）。
 
-**签名状态：本版本只有本地 ad-hoc 签名，尚未 Developer ID 签名，也未通过 Apple 公证。** macOS 可能阻止从网络下载的 App 首次打开，本版供早期测试。后续将另行发布公证后的安装包；已下载的旧包不会自动变为已公证包。
+适用于 **macOS 14+，Apple Silicon 和 Intel**。目前尚未加入 Apple 开发者计划，安装包未使用 Developer ID 签名，也未通过 Apple 公证。现阶段先分享给大家体验；如果用的人多，未来会考虑继续完善并办理签名、公证。
 
-本仓库用于安装包下载、许可说明与问题反馈，目前不包含完整应用源码。GitHub 自动生成的 Source code ZIP/TAR 不是安装包；请下载上面的版本化 ZIP。
+## 让 Codex 等 AI 助手帮你安装
 
-## 许可
+把下面这句话发给能操作你电脑的助手即可：
 
-Time Note 使用 **[PolyForm Noncommercial License 1.0.0](LICENSE)**，按许可证允许的非商业用途使用、修改和分享。商业用途如不在许可范围内，须另行取得权利人授权；具体允许用途和例外以许可证全文为准。请同时保留 [NOTICE](NOTICE)。
+> 帮我下载并安装 Time Note：https://github.com/Jiang59991/time-note 。先阅读仓库的 INSTALL.md，下载适合我系统的 Release 安装包并校验；保留已有数据。若需要 macOS 安全确认，请告诉我怎么操作。
 
-非商业许可证与 Apple 签名证书、公证相互独立。发布在 GitHub 上不代表获得任意商业使用权，也不代表获得 Apple 公证。
+仓库提供了 [安装说明](INSTALL.md) 和可检查的 [Mac 安装脚本](scripts/install-macos.sh)，帮助助手完成下载、校验和安装。首次打开的系统确认可能仍需你亲自操作。
 
-## 数据与反馈
+## 源码与 Windows
 
-时间记录和 Todo 保存在本机，安装包不包含开发者个人账本。建议通过应用菜单导出 JSON 备份后再更新。
+**源码已公开，采用 [PolyForm Noncommercial 1.0.0 非商业许可证](LICENSE)，不可未经授权用于许可范围外的商业用途。** 具体条款及例外以 LICENSE 为准，请保留 [NOTICE](NOTICE)。
 
-反馈时请提供系统版本、芯片类型、App 版本和复现步骤。截图或日志请先移除私人任务、路径和其他个人信息。
+Windows 用户可以从仓库的 **Code → Download ZIP** 或 [Release 源码包](https://github.com/Jiang59991/time-note/releases/download/v1.1.5/TimeNote-1.1.5-source.zip) 下载源码，交给 Codex 等助手协助移植为 Windows 版本；目前只有 Mac 安装包，移植需要开发和测试，不能保证自动转换成功。可参考 [源码与移植说明](INSTALL.md#源码开发与-windows-移植)。
+
+## 使用与反馈
+
+[使用说明](docs/11-user-guide.md) · [反馈问题](https://github.com/Jiang59991/time-note/issues) · [构建与验证](CONTRIBUTING.md)
+
+后续会补充使用截图。

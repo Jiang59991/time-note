@@ -1,0 +1,22 @@
+.DS_Store
+.build/
+build/
+node_modules/
+*.log
+
+# Local data, credentials and packaging intermediates
+work/
+outputs/
+.env
+.env.*
+!.env.example
+*.p12
+*.pfx
+*.key
+*.mobileprovision
+**/store.json
+**/store.json.*
+**/Backups/
+recordings/
+# Private / third-party visual references are not distributed
+design/references/
