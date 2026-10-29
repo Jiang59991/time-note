@@ -52,6 +52,9 @@ struct NativeTests {
         let diningSnapshot: [String: Any] = ["now": ms, "records": [["id": "meal", "title": "午餐", "category": "dining", "start": ms - 1800000, "end": ms, "mode": "countup"]], "todos": [:]]
         expect(String(data: ExportFormatter.csv(diningSnapshot), encoding: .utf8)!.contains("餐饮"), "Dining CSV label")
         expect(String(data: ExportFormatter.markdown(diningSnapshot), encoding: .utf8)!.contains("餐饮"), "Dining Markdown label")
+        let customSnapshot: [String: Any] = ["now": ms, "records": [["id":"custom", "title":"记录", "category":"custom-id", "start":ms-60000,"end":ms,"mode":"countup"]], "todos":[:], "categories":[["id":"custom-id","name":"生活安排"]]]
+        expect(String(data: ExportFormatter.csv(customSnapshot), encoding: .utf8)!.contains("生活安排"), "Custom label CSV uses current name")
+        expect(String(data: ExportFormatter.markdown(customSnapshot), encoding: .utf8)!.contains("生活安排"), "Custom label Markdown uses current name")
         print("PASS \(checks) native planner/export checks")
     }
 }

@@ -19,9 +19,9 @@ Native pushes committed snapshots via `window.timeNote.receiveSnapshot(snapshot)
 ## Snapshot
 
 ```
-{schemaVersion:1, revision:0, records:[], todos:{}, categoryMemory:{}, now:1730000000000}
+{schemaVersion:1, revision:0, records:[], todos:{}, categoryMemory:{}, categories:[...], categoryPalette:[...], now:1730000000000}
 ```
-`now` is generated at response, not persisted truth. categories keys and order: work 科研, create 自媒体, move 运动, rest 娱乐, sleep 睡眠, dining 餐饮, life 杂事, other 其他.
+`now` is generated at response, not persisted truth. Default category keys and order: work 科研, create 自媒体, move 运动, rest 娱乐, sleep 睡眠, dining 餐饮, daily 生活, life 杂事, other 其他. `categories` is the authoritative ordered catalog of `{id,name,color,revision}`; new IDs are native-generated UUID strings, legacy built-in keys remain stable. `categoryPalette` supplies the finite color choices. Labels can be added, renamed, recolored or deleted (maximum 64); other must retain its ID/name but can change color. Selectors, time blocks, weekly totals and exports all use the saved catalog. Old V1 backups without categories receive these defaults on decode; no historical record IDs or category keys are rewritten. New files include categories; older app versions may reject this extension and should not be used to reopen them.
 
 Record:
 ```
@@ -31,7 +31,7 @@ Record:
 ```
 Every timer start has its own runID and record id; manual history has null runID. End null means running. Only a timer can be running. UUIDs are native generated. Pomodoro minutes 1...240. Duration is end-start; active pomodoro capped at deadline, ordinary at current time. Date is only presentation.
 
-Todo is `{id:UUID,title:string,done:bool,revision:integer}` stored under YYYY-MM-DD date keys; separate from timer facts. Native reconciliation moves all unfinished Todos from earlier local Gregorian calendar dates to today (oldest date first, ahead of today’s existing items), preserving IDs and incrementing item revisions. Completed Todos stay on their original date and do not carry over; future Todos stay scheduled. Snapshot/load, lifecycle polling, commands and backup import all reconcile, including after multiple days offline. Repeated reconciliation does not duplicate items. Stale commands targeting the previous day are rejected; refresh before retrying. categoryMemory maps exact normalized trimmed titles to a user-selected category. Editing with categoryManual=true updates that mapping; automatic recognition never overrides explicit choice. Null/unknown categories cannot create an ninth category.
+Todo is `{id:UUID,title:string,done:bool,revision:integer}` stored under YYYY-MM-DD date keys; separate from timer facts. Native reconciliation moves all unfinished Todos from earlier local Gregorian calendar dates to today (oldest date first, ahead of today’s existing items), preserving IDs and incrementing item revisions. Completed Todos stay on their original date and do not carry over; future Todos stay scheduled. Snapshot/load, lifecycle polling, commands and backup import all reconcile, including after multiple days offline. Repeated reconciliation does not duplicate items. Stale commands targeting the previous day are rejected; refresh before retrying. categoryMemory maps exact normalized trimmed titles to a user-selected category. Editing with categoryManual=true updates that mapping; automatic recognition never overrides explicit choice. Null/unregistered categories are rejected; only categoryAdd creates new labels.
 
 ## Commands
 
@@ -42,6 +42,9 @@ Every command includes `{operationID: UUID, type: string}`. A repeated identical
 - `edit`: id, expectedRevision, title, category, categoryManual, start, end (null allowed only for currently running), minutes, completionIntent (`preserve` | `finish` | `deadline`). Recompute active pomodoro deadline=start+minutes*60000. If the newly recomputed deadline has passed and no explicit manual end is supplied, require intent deadline and persist end=deadline. An explicit intent finish with a valid end is a manual historical correction and may end at that time even if the newly recomputed deadline is past; it never keeps the run alive. If original deadline already elapsed, reconcile original first and return conflict; never revive it. Explicit end requires finish. Completed record stays completed and cannot be cleared to running. Metadata-only edits preserve exact timestamps.
 - `finish`: id, expectedRevision, optional end. Default end=now, expiry always original deadline. Only target run affected.
 - `delete`: id, expectedRevision. Remove record atomically; schedule sync removes its notification. UI confirm for this destructive operation, especially active run. Prior full store backup keeps recovery copy.
+- `categoryAdd`: name (1–20 characters), color (one of categoryPalette). Native generates a UUID, inserts before other.
+- `categoryEdit`: id, expectedRevision, name, color. Names must be unique after normalization.
+- `categoryDelete`: id, expectedRevision. Other cannot be deleted. The category is removed while matching records and title memory are atomically reassigned to other; record IDs, timing and concurrent runs are preserved. Matching record revisions advance once, including if pomodoro expiry is reconciled in the same transaction. UI confirms this reassignment; no record is deleted.
 - `todoAdd`: day, title
 - `todoSet`: day, id, expectedRevision, done (set, not toggle)
 - `todoDelete`: day, id, expectedRevision

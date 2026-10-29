@@ -34,3 +34,9 @@ TIME_NOTE_DATA_DIR="$PWD/work/smoke-new" "build/Time Note.app/Contents/MacOS/Tim
 结果及未实测范围见 `docs/12-release-verification.md`。
 
 悬浮球保护测试：使用新的独立 TIME_NOTE_DATA_DIR 运行应用二进制并传入 `--orb-test`，结果写入 `orb-result.json`。
+
+
+标题输入原生回归：使用新的独立 `TIME_NOTE_DATA_DIR` 运行应用二进制并传入 `--title-input-test`，结果写入该目录的 `title-input-result.json`。该测试使用真实 AppKit 鼠标／键盘事件和 WebKit 文本输入客户端，覆盖未激活悬浮展开、点击标题、删除、英文输入、中文组合文本提交及原生桥保存，不用 JS 赋值来代替输入验证。
+
+
+1.2.0 标签管理回归：StoreEngine 覆盖旧 V1 默认补全、自定义 UUID、重复操作、名称／颜色校验、修订冲突、备份恢复、删除时原子归类及写入失败；Web 覆盖预设调色、新增／改名／换色／删除、失败草稿、周统计及进行中分类名即时刷新。真实 WKWebView 冒烟经标签管理界面提交命令，删除时验证记录保留，并在独立进程重开时验证自定义标签恢复。

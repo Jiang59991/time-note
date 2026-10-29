@@ -37,7 +37,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         do {
-            if ProcessInfo.processInfo.arguments.contains(where: { $0.hasPrefix("--smoke-") }) && !isTest {
+            if ProcessInfo.processInfo.arguments.contains(where: { $0.hasPrefix("--smoke-") || $0 == "--title-input-test" }) && !isTest {
                 throw ShellError.message("冒烟测试必须指定独立的 TIME_NOTE_DATA_DIR。")
             }
             let directory: URL
@@ -282,17 +282,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         guard !isCollapsed, let window, let content = window.contentView else { return }
         changingView = true; defer { changingView = false }
         expandedFrame = window.frame; expandedContent = content
+        // Let AppKit clear its key-window bookkeeping before the non-key orb
+        // replaces the editor. Calling resignKey directly leaves a stale key
+        // window identity that can prevent later text insertion in WebKit.
+        window.orderOut(nil)
         let orb = NoteOrbView(frame: NSRect(x: 0, y: 0, width: 40, height: 40))
         orb.setAccessibilityElement(true)
         orb.onOpen = { [weak self] in self?.showWindow() }
         orb.onDragEnd = { [weak self] in self?.orbDragEnded() }
         isCollapsed = true
         (window as? NoteWindow)?.compactMode = true
-        window.resignKey()
         window.contentMinSize = NSSize(width: 40, height: 40)
         window.styleMask.remove(.resizable)
         window.contentView = orb
         window.setFrame(NSRect(x: expandedFrame.maxX - 40, y: expandedFrame.maxY - 40, width: 40, height: 40), display: true)
+        window.orderFront(nil)
         pointerSince = nil; outsideSince = nil
     }
     private func orbDragEnded() {
@@ -507,6 +511,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         applyAppearance()
         Task { await poll(force: true) }
         if isTest && CommandLine.arguments.contains("--orb-test") { runOrbTest(); return }
+        if isTest && CommandLine.arguments.contains("--title-input-test") {
+            runTitleInputTest(in: webView, window: window, directory: dataDirectory,
+                hover: { [weak self] in self?.collapseToOrb(); self?.expandOrb(activate: false) })
+            return
+        }
         if !isTest && preferences.bool(forKey: "hoverOrb") { collapseToOrb() }
         if ProcessInfo.processInfo.arguments.contains("--smoke-test"), !smokeStarted {
             smokeStarted = true

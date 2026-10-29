@@ -2,16 +2,20 @@
   'use strict';
   const $ = selector => document.querySelector(selector);
   const MINUTE = 60000;
-  const cats = {
+  const defaultCats = {
     work: {name:'科研',color:'#bfdbfe',words:['论文','科研','实验','组会','文献','研究','数据分析','代码','编程','会议','开会']},
     create: {name:'自媒体',color:'#fecdd3',words:['自媒体','剪辑','剪视频','制作视频','拍视频','写文章','创作','拍摄','公众号','录播客']},
     move: {name:'运动',color:'#a7f3d0',words:['运动','攀岩','跑步','散步','健身','锻炼']},
     rest: {name:'娱乐',color:'#fde68a',words:['电影','游戏','娱乐','休息','刷手机','看视频','刷视频','看剧','听播客']},
     sleep: {name:'睡眠',color:'#d1d5db',words:['睡觉','睡眠','午睡','午休']},
     dining: {name:'餐饮',color:'#fed7aa',words:['餐饮','早餐','午餐','晚餐','早饭','午饭','晚饭','吃饭','用餐','夜宵']},
+    daily: {name:'生活',color:'#d9f99d',words:['生活']},
     life: {name:'杂事',color:'#99f6e4',words:['做饭','买菜','通勤','咖啡','洗澡','家务','采购','快递']},
     other: {name:'其他',color:'#ddd6fe',words:['阅读','看书','学习','英语','课程','读书']}
   };
+  let cats={...defaultCats}, categoryRows=Object.entries(cats).map(([id,c])=>({id,name:c.name,color:c.color,revision:0}));
+  let categoryPalette=['#bfdbfe','#fecdd3','#a7f3d0','#fde68a','#c6c8cc','#fed7aa','#d9f99d','#99f6e4','#ddd6fe','#fbcfe8','#bae6fd','#e2e8f0'];
+  let categoryEditing=null, categoryColor='#bfdbfe', categorySignature='';
   const dayNames = ['周日','周一','周二','周三','周四','周五','周六'];
   let records=[], todos={}, categoryMemory={}, revision=-1, ready=false;
   let view='day', selectedDate=dateKey(Date.now()), entryMode='timer', manualDateTouched=false;
@@ -39,7 +43,7 @@
   function duration(ms){const m=Math.floor(Math.max(0,ms)/MINUTE);return m>=60?Math.floor(m/60)+'h'+(m%60?pad(m%60)+'m':''):m+'m';}
   function timerString(ms){const s=Math.floor(Math.max(0,ms)/1000);return s>=3600?Math.floor(s/3600)+':'+pad(Math.floor(s/60)%60)+':'+pad(s%60):pad(Math.floor(s/60))+':'+pad(s%60);}
   function element(tag,cls,text){const el=document.createElement(tag);if(cls)el.className=cls;if(text!==undefined)el.textContent=text;return el;}
-  function guessCategory(title){const key=normalizeTitle(title);if(Object.hasOwn(categoryMemory,key)&&cats[categoryMemory[key]])return categoryMemory[key];if(cats.dining.words.some(word=>key.includes(word)))return 'dining';for(const [id,c]of Object.entries(cats))if(c.words.some(word=>key.includes(word)))return id;return 'other';}
+  function guessCategory(title){const key=normalizeTitle(title);if(Object.hasOwn(categoryMemory,key)&&cats[categoryMemory[key]])return categoryMemory[key];if(cats.dining?.words.some(word=>key.includes(word)))return 'dining';for(const [id,c]of Object.entries(cats))if(c.words.some(word=>key.includes(word))||(id!=='other'&&key.includes(normalizeTitle(c.name))))return id;return 'other';}
   const running=()=>records.filter(r=>r.end===null).sort((a,b)=>a.start-b.start);
   const recordEnd=r=>r.end===null?(r.mode==='pomodoro'?Math.min(now(),r.deadline):now()):r.end;
   function rangeRecords(start,end){return records.filter(r=>r.start<end&&recordEnd(r)>start).map(record=>({record,start:Math.max(start,record.start),end:Math.min(end,recordEnd(record))})).filter(r=>r.end>r.start).sort((a,b)=>a.start-b.start||b.end-a.end);}
@@ -50,15 +54,23 @@
   async function native(payload){const handler=window.webkit?.messageHandlers?.timeNote;if(!handler?.postMessage)throw new Error('原生连接不可用。请从“时间便签”应用打开。');const result=await handler.postMessage(payload);if(result?.error)throw new Error(result.error);return result;}
   function uuid(){if(crypto.randomUUID)return crypto.randomUUID();const bytes=crypto.getRandomValues(new Uint8Array(16));bytes[6]=(bytes[6]&15)|64;bytes[8]=(bytes[8]&63)|128;const h=[...bytes].map(v=>v.toString(16).padStart(2,'0'));return h.slice(0,4).join('')+'-'+h.slice(4,6).join('')+'-'+h.slice(6,8).join('')+'-'+h.slice(8,10).join('')+'-'+h.slice(10).join('');}
   function syncBusy(){
-    for(const el of document.querySelectorAll('#entry-form input,#entry-form select,#entry-form button,#todo-form input,#todo-form button,#todo-list input,#todo-list button,#running-list button,#edit-form input,#edit-form select,#edit-form button'))el.disabled=inFlight||!ready;
+    for(const el of document.querySelectorAll('#entry-form input,#entry-form select,#entry-form button,#todo-form input,#todo-form button,#todo-list input,#todo-list button,#running-list button,#edit-form input,#edit-form select,#edit-form button,#category-form input,#category-form button,#category-list button'))el.disabled=inFlight||!ready;
+    $('#category-name').disabled=inFlight||!ready||categoryEditing?.id==='other';
     if(editingBase){const current=records.find(r=>r.id===editingBase.id),stale=!current||current.revision!==editingBase.revision;for(const id of ['edit-save','edit-stop','edit-delete'])$('#'+id).disabled=inFlight||!ready||stale;$('#edit-reload').disabled=inFlight||!current;}
   }
   function receiveSnapshot(snapshot){
     if(!snapshot||snapshot.schemaVersion!==1||!Number.isInteger(snapshot.revision)||!Array.isArray(snapshot.records)||!snapshot.todos||!snapshot.categoryMemory)throw new Error('数据格式不受支持。');
     if(snapshot.revision<revision)return false;
-    if(!snapshot.records.every(r=>typeof r.id==='string'&&Object.hasOwn(cats,r.category)&&Number.isFinite(r.start)&&(r.end===null||Number.isFinite(r.end))))throw new Error('记录数据无效，请检查备份。');
+    const nextRows=snapshot.categories||categoryRows;
+    if(!Array.isArray(nextRows)||!nextRows.length||!nextRows.some(c=>c.id==='other')||!nextRows.every(c=>typeof c.id==='string'&&typeof c.name==='string'&&/^#[0-9a-f]{6}$/.test(c.color)&&Number.isSafeInteger(c.revision)))throw new Error('标签数据无效。');
+    const nextCats=Object.fromEntries(nextRows.map(c=>[c.id,{...c,words:defaultCats[c.id]?.words||[]}]));
+    if(!snapshot.records.every(r=>typeof r.id==='string'&&Object.hasOwn(nextCats,r.category)&&Number.isFinite(r.start)&&(r.end===null||Number.isFinite(r.end))))throw new Error('记录数据无效，请检查备份。');
     if(snapshot.revision===revision&&ready)return false;
-    const before=records;records=clone(snapshot.records);todos=clone(snapshot.todos);categoryMemory=clone(snapshot.categoryMemory);revision=snapshot.revision;ready=true;
+    const before=records;
+    const oldSelection={new:$('#new-category').value,edit:$('#edit-category').value};
+    cats=nextCats;categoryRows=clone(nextRows);categoryPalette=snapshot.categoryPalette||categoryPalette;
+    syncCategorySelectors(oldSelection);renderCategoryManager();
+    records=clone(snapshot.records);todos=clone(snapshot.todos);categoryMemory=clone(snapshot.categoryMemory);revision=snapshot.revision;ready=true;
     $('#connection-error').hidden=true;
     for(const old of before){const changed=records.find(r=>r.id===old.id);if(old.end===null&&changed?.end!==null&&changed?.finishReason==='deadline')lastPomo=changed;}
     renderData();checkEditorConflict();syncBusy();return true;
@@ -115,6 +127,20 @@
   function renderDay(){axis($('#day-axis'),selectedDate);preserveTrackFocus($('#day-track'),()=>$('#day-track').replaceChildren(makeDayTrack(selectedDate)));renderTodos();}
   function renderWeek(){const startKey=weekStart(),start=dayStart(startKey),end=dayStart(addDays(startKey,7));$('#week-axis').replaceChildren();for(let hour=0;hour<=24;hour+=3){const label=element('span','',pad(hour));label.style.top=hour/24*100+'%';$('#week-axis').append(label);}preserveTrackFocus($('#week-days'),()=>{$('#week-days').replaceChildren();for(let i=0;i<7;i++){const date=addDays(startKey,i),d=new Date(dayStart(date)),row=element('div','week-row'+(date===dateKey(now())?' today':'')),button=element('button','week-date',dayNames[d.getDay()]);button.type='button';button.append(element('span','',d.getDate()));button.setAttribute('aria-label','查看 '+date+' 日览');button.addEventListener('click',()=>{selectedDate=date;chooseView('day');});row.append(button,makeTrack(date,false,true));$('#week-days').append(row);}});
     const totals=Object.fromEntries(Object.keys(cats).map(key=>[key,0]));rangeRecords(start,end).forEach(item=>totals[item.record.category]+=item.end-item.start);const max=Math.max(1,...Object.values(totals));$('#category-summary').replaceChildren();for(const [id,cat]of Object.entries(cats)){const cell=element('div','category-cell');cell.dataset.category=id;cell.dataset.duration=totals[id];cell.style.setProperty('--tone',cat.color);const label=element('span');label.append(element('i'),document.createTextNode(cat.name));const bar=element('div','cat-bar');bar.style.width=totals[id]/max*100+'%';cell.append(label,element('span','cat-time',duration(totals[id])),bar);$('#category-summary').append(cell);}}
+  function syncCategorySelectors(selected){
+    const signature=JSON.stringify(categoryRows);if(signature===categorySignature)return;categorySignature=signature;runningSignature='';hidePeek();
+    for(const prefix of ['new','edit']){const select=$('#'+prefix+'-category');select.replaceChildren();for(const c of categoryRows){const option=element('option','',c.name);option.value=c.id;select.append(option);}select.value=Object.hasOwn(cats,selected[prefix])?selected[prefix]:'other';}
+  }
+  function renderCategoryPalette(){
+    $('#category-palette').replaceChildren();for(const color of categoryPalette){const button=element('button','category-swatch');button.type='button';button.style.setProperty('--swatch',color);button.dataset.color=color;button.setAttribute('role','radio');button.setAttribute('aria-label','颜色 '+color);button.setAttribute('aria-checked',String(categoryColor===color));button.addEventListener('click',()=>{categoryColor=color;for(const b of $('#category-palette').children)b.setAttribute('aria-checked',String(b.dataset.color===color));});$('#category-palette').append(button);}
+  }
+  function resetCategoryForm(){categoryEditing=null;categoryColor=categoryPalette[0];$('#category-name').value='';$('#category-save').textContent='新增标签';$('#category-reset').hidden=true;$('#category-error').textContent='';renderCategoryPalette();syncBusy();}
+  function renderCategoryManager(){
+    if(!$('#category-manager').open)return;
+    const list=$('#category-list'),signature=JSON.stringify(categoryRows);if(list.dataset.signature===signature)return;list.dataset.signature=signature;list.replaceChildren();
+    for(const c of categoryRows){const row=element('div','category-manager-row'),dot=element('i','category-dot');dot.style.background=c.color;const name=element('span','category-name',c.name),edit=element('button','','修改');edit.type='button';edit.setAttribute('aria-label','修改标签 '+c.name);edit.addEventListener('click',()=>{categoryEditing={...c};categoryColor=c.color;$('#category-name').value=c.name;$('#category-save').textContent='保存标签';$('#category-reset').hidden=false;$('#category-error').textContent='';renderCategoryPalette();syncBusy();if(c.id!=='other')$('#category-name').focus();});row.append(dot,name,edit);if(c.id!=='other'){const remove=element('button','category-remove','删除');remove.type='button';remove.setAttribute('aria-label','删除标签 '+c.name);remove.addEventListener('click',async()=>{if(await confirmAction('删除标签“'+c.name+'”？使用它的记录将归到“其他”，时间记录不会删除。','删除标签')){if(await mutate('categoryDelete',{id:c.id,expectedRevision:c.revision},'#category-error')){if(categoryEditing?.id===c.id)resetCategoryForm();}}});row.append(remove);}else row.append(element('span','category-fallback','兜底标签'));list.append(row);}syncBusy();
+  }
+  function openCategoryManager(){if(inFlight||!ready)return;$('#tools-menu').hidden=true;$('#tools-toggle').setAttribute('aria-expanded','false');$('#category-manager').showModal();resetCategoryForm();renderCategoryManager();$('#category-name').focus();}
   function renderTodos(){const list=todos[selectedDate]||[],signature=selectedDate+JSON.stringify(list);if(signature===todoSignature)return;todoSignature=signature;const focused=document.activeElement,row=focused.closest?.('[data-todo-id]'),focus=row?{id:row.dataset.todoId,tag:focused.tagName.toLowerCase()}:null;$('#todo-list').replaceChildren();for(const todo of list){const row=element('div','todo-row'+(todo.done?' done':''));row.dataset.todoId=todo.id;const check=element('input');check.type='checkbox';check.checked=todo.done;check.setAttribute('aria-label','完成 '+todo.title);check.addEventListener('change',async()=>{const done=check.checked;check.checked=todo.done;await mutate('todoSet',{day:selectedDate,id:todo.id,expectedRevision:todo.revision,done});});const title=element('span','todo-title',todo.title),remove=element('button','','×');remove.type='button';remove.setAttribute('aria-label','删除待办 '+todo.title);remove.addEventListener('click',async()=>{const day=selectedDate;if(await confirmAction('删除待办“'+todo.title+'”？','删除'))await mutate('todoDelete',{day,id:todo.id,expectedRevision:todo.revision});});row.append(check,title,remove);$('#todo-list').append(row);}if(focus){const row=[...$('#todo-list').children].find(el=>el.dataset.todoId===focus.id);row?.querySelector(focus.tag)?.focus({preventScroll:true});}syncBusy();}
   function renderRunning(){const active=running(),signature=JSON.stringify(active);if(signature!==runningSignature){runningSignature=signature;const focused=document.activeElement,card=focused.closest?.('[data-task-id]'),focus=card?{id:card.dataset.taskId,stop:focused.classList.contains('stop')}:null;$('#running-list').replaceChildren();if(!active.length)$('#running-list').append(element('p','running-empty','现在没有计时中的事项。可以安静地开始下一件事。'));for(const r of active){const card=element('article','running-card');card.dataset.taskId=r.id;const left=element('div'),title=element('button','running-title',r.title);title.type='button';title.addEventListener('click',()=>openEditor(r.id));const meta=element('div','running-meta');meta.append(element('span','mono',relativeDate(dateKey(r.start))+' '+time(r.start)+' 开始'),document.createTextNode(' · '+cats[r.category].name));left.append(title,meta);const right=element('div','running-right'),clock=element('span','running-clock'),stop=element('button','stop','结束');clock.dataset.clockId=r.id;stop.type='button';stop.dataset.stopId=r.id;stop.setAttribute('aria-label','结束 '+r.title+'（'+time(r.start)+' 开始）');stop.addEventListener('click',async()=>{if(await mutate('finish',{id:r.id,expectedRevision:r.revision}))say('已结束“'+r.title+'”。');});right.append(clock,stop);card.append(left,right);$('#running-list').append(card);}if(focus){const card=[...$('#running-list').children].find(el=>el.dataset.taskId===focus.id);card?.querySelector(focus.stop?'.stop':'.running-title')?.focus({preventScroll:true});}}
     $('#running-heading').textContent='进行中 · '+active.length;$('#pomo-notice').hidden=!lastPomo;if(lastPomo){$('#pomo-notice').replaceChildren(document.createTextNode('“'+lastPomo.title+'” 本轮已结束。 '));const button=element('button','new-round','准备下一轮');button.type='button';button.addEventListener('click',()=>{if(inFlight)return;$('#new-title').value=lastPomo.title;$('#new-category').value=lastPomo.category;newCategoryManual=lastPomo.categoryManual;$('#new-timer-mode').value='pomodoro';$('#new-minutes').value=lastPomo.minutes;updateEntryMode('timer');updateTimerMode();updateCategory('new');$('#new-title').focus();});$('#pomo-notice').append(button);}renderClocks();syncBusy();}
@@ -168,6 +194,12 @@
   window.timeNote=Object.freeze({receiveSnapshot:snapshot=>{try{return receiveSnapshot(snapshot);}catch(error){say(message(error),true,true);return false;}},openRecord:id=>{chooseView('record');if(typeof id==='string')openEditor(id);else $('#new-title').focus();}});
   for(const [id,cat]of Object.entries(cats))for(const select of [$('#new-category'),$('#edit-category')]){const option=element('option','',cat.name);option.value=id;select.append(option);}
   $('#new-category').value='other';resetManualTimes();updateCategory('new');
+  for(const id of ['manage-categories','new-manage-categories','edit-manage-categories'])$('#'+id).addEventListener('click',openCategoryManager);
+  $('#category-close').addEventListener('click',()=>{if(!inFlight)$('#category-manager').close();});
+  $('#category-manager').addEventListener('cancel',event=>{if(inFlight)event.preventDefault();});
+  $('#category-reset').addEventListener('click',resetCategoryForm);
+  $('#category-form').addEventListener('submit',async event=>{event.preventDefault();const name=$('#category-name').value.trim();if(!name){$('#category-error').textContent='请填写标签名称。';return;}const fields=categoryEditing?{id:categoryEditing.id,expectedRevision:categoryEditing.revision,name,color:categoryColor}:{name,color:categoryColor};if(await mutate(categoryEditing?'categoryEdit':'categoryAdd',fields,'#category-error')){resetCategoryForm();$('#category-name').focus();}});
+
   for(const button of document.querySelectorAll('[data-view]'))if(button.matches('button'))button.addEventListener('click',()=>chooseView(button.dataset.view));
   $('.tabs').addEventListener('keydown',event=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;event.preventDefault();const order=['day','week','record'],index=event.key==='Home'?0:event.key==='End'?2:(order.indexOf(view)+(event.key==='ArrowRight'?1:2))%3;chooseView(order[index]);$('#tab-'+order[index]).focus();});
   $('#prev-date').addEventListener('click',()=>{selectedDate=addDays(selectedDate,view==='week'?-7:-1);renderData();});$('#next-date').addEventListener('click',()=>{selectedDate=addDays(selectedDate,view==='week'?7:1);renderData();});

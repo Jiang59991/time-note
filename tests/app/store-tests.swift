@@ -292,7 +292,7 @@ private final class StoreTests {
         let manual = row(snapshot, 3)
         try check(manual["runID"] is NSNull && manual["deadline"] is NSNull && manual["mode"] as? String == "countup", "Manual record is completed history without active run")
         try check(number(manual, "end") - number(manual, "start") == 34_000, "Manual record stores exact interval rather than a day total")
-        for category in ["work", "create", "move", "rest", "sleep", "dining", "life", "other"] {
+        for category in ["work", "create", "move", "rest", "sleep", "dining", "daily", "life", "other"] {
             _ = try await engine.execute(start(category, category: category), now: date(6))
             checks += 1
         }
@@ -304,6 +304,59 @@ private final class StoreTests {
                 _ = try await engine.execute(self.command("manual", ["title": "错误", "category": "work", "categoryManual": false, "start": startTime, "end": endTime]), now: self.date(10))
             }
         }
+    }
+
+    func editableCategories() async throws {
+        let fixture = try Fixture(), engine = try StoreEngine(url: fixture.url)
+        func labels(_ state: [String: Any]) -> [[String: Any]] { state["categories"] as! [[String: Any]] }
+        var state = try decoded(await engine.snapshot(now: base))
+        try check(labels(state).map { $0["name"] as! String } == ["科研", "自媒体", "运动", "娱乐", "睡眠", "餐饮", "生活", "杂事", "其他"], "Default labels include new life label without renaming legacy chores")
+        _ = try await engine.execute(start("原有杂事", category: "life"), now: base)
+        var legacy = try decoded(await engine.exportBackup()); legacy.removeValue(forKey: "categories")
+        let legacyFixture = try Fixture(), legacyEngine = try StoreEngine(url: legacyFixture.url)
+        let migrated = try decoded(await legacyEngine.importBackup(encoded(legacy), now: base))
+        try check(labels(migrated).count == 9 && row(migrated)["category"] as? String == "life", "Legacy V1 backups gain defaults without rewriting existing category IDs")
+        let add = try command("categoryAdd", ["name": "  学习  ", "color": "#bfdbfe"])
+        state = try decoded(await engine.execute(add, now: base))
+        let label = labels(state).first { $0["name"] as? String == "学习" }!, id = label["id"] as! String
+        try check(UUID(uuidString: id) != nil && labels(state).last!["id"] as? String == "other", "Custom label gets stable native UUID and is inserted before fallback")
+        let replay = try decoded(await engine.execute(add, now: base))
+        try check(revision(state) == revision(replay) && labels(replay).count == 10, "Label add retries do not duplicate")
+        for fields: [String: Any] in [["name":"学习", "color":"#bfdbfe"], ["name":"", "color":"#bfdbfe"], ["name":"a\nb", "color":"#bfdbfe"], ["name":String(repeating:"长",count:21), "color":"#bfdbfe"], ["name":"有效", "color":"#000000"]] {
+            try await rejects("Invalid / duplicate category rejected") { _ = try await engine.execute(self.command("categoryAdd", fields), now: self.base) }
+        }
+        state = try decoded(await engine.execute(start("自定义标签记录", mode: "pomodoro", minutes: 1, category: id, manual: true), now: base))
+        let running = row(state, 1)
+        try check(running["category"] as? String == id && (state["categoryMemory"] as! [String: String])["自定义标签记录"] == id, "Custom label accepted and manual memory saved")
+        state = try decoded(await engine.execute(command("categoryEdit", ["id":id,"expectedRevision":1,"name":"阅读学习","color":"#fecdd3"]), now: date(1)))
+        let edited = labels(state).first { $0["id"] as? String == id }!
+        try check(edited["name"] as? String == "阅读学习" && edited["color"] as? String == "#fecdd3" && number(row(state,1),"revision") == number(running,"revision"), "Rename / recolor preserve record facts and identity")
+        try await rejects("Stale category edit rejected") { _ = try await engine.execute(self.command("categoryEdit", ["id":id,"expectedRevision":1,"name":"旧修改","color":"#bfdbfe"]), now: self.base) }
+        let backup = try await engine.exportBackup(), restoredFixture = try Fixture(), restored = try StoreEngine(url: restoredFixture.url)
+        let restoredState = try decoded(await restored.importBackup(backup, now: date(1)))
+        try check(labels(restoredState).contains { $0["id"] as? String == id && $0["color"] as? String == "#fecdd3" }, "Backup import restores custom label name, ID and color")
+        var malformed = try decoded(backup)
+        var malformedLabels = labels(malformed); malformedLabels[0]["color"] = "url(evil)"; malformed["categories"] = malformedLabels
+        let bytes = try encoded(malformed), diskBefore = try Data(contentsOf: fixture.url)
+        try await rejects("Malformed category backup rejected") { _ = try await engine.importBackup(bytes, now: self.date(1)) }
+        try check(try Data(contentsOf: fixture.url) == diskBefore, "Invalid label import leaves file intact")
+        let unknown = UUID().uuidString
+        try await rejects("Unregistered UUID is not a valid record category") { _ = try await engine.execute(self.start(category: unknown), now: self.date(2)) }
+        try await rejects("Fallback name stays recognizable") { _ = try await engine.execute(self.command("categoryEdit",["id":"other","expectedRevision":0,"name":"重命名","color":"#bfdbfe"]),now:self.base) }
+        let failingFixture = try Fixture(), failingEngine = try StoreEngine(url: failingFixture.url)
+        let unchanged = try Data(contentsOf: failingFixture.url)
+        try Data("blocked backup folder".utf8).write(to: failingFixture.url.deletingLastPathComponent().appendingPathComponent("Backups"))
+        try await rejects("Label add write failure is not reported as success") { _ = try await failingEngine.execute(self.command("categoryAdd",["name":"失败标签","color":"#bfdbfe"]),now:self.base) }
+        let failedState = try decoded(await failingEngine.snapshot(now: base))
+        try check(labels(failedState).count == 9 && revision(failedState) == 0 && (try Data(contentsOf: failingFixture.url)) == unchanged, "Failed label commit leaves memory and disk unchanged")
+        try await rejects("Fallback category cannot be deleted") { _ = try await engine.execute(self.command("categoryDelete",["id":"other","expectedRevision":0]),now:self.base) }
+        // Deletion and due-pomodoro reconciliation share one commit and one row revision.
+        state = try decoded(await engine.execute(command("categoryDelete", ["id":id,"expectedRevision":2]), now: date(61)))
+        let moved = row(state,1)
+        try check(moved["id"] as? String == running["id"] as? String && moved["category"] as? String == "other" && moved["finishReason"] as? String == "deadline", "Deleting label preserves due timer and reassigns it atomically")
+        try check(number(moved,"revision") == number(running,"revision")+1 && !labels(state).contains { $0["id"] as? String == id }, "Deletion increments record once, removes label")
+        try check((state["categoryMemory"] as! [String:String])["自定义标签记录"] == "other" && row(state)["category"] as? String == "life", "Deletion remaps only matching memory and preserves other records")
+        try await rejects("Deleted label cannot receive new records") { _ = try await engine.execute(self.start(category:id),now:self.date(62)) }
     }
 
     func todosAndInputValidation() async throws {
@@ -589,7 +642,8 @@ private final class StoreTests {
             ("simultaneous actor commands", simultaneousCommands),
             ("editing and exact time semantics", editTimeSemantics),
             ("original deadline races", originalDeadlineRaces),
-            ("eight categories, title memory and manual entries", categoryMemoryAndManual),
+            ("default categories, title memory and manual entries", categoryMemoryAndManual),
+            ("editable labels, migration, deletion and backup", editableCategories),
             ("todos and strict command validation", todosAndInputValidation),
             ("Todo midnight rollover and cold restart", todoRollover),
             ("backup imports and malformed input atomicity", importsAndAtomicValidation),

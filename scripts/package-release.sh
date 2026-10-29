@@ -3,7 +3,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 APP="$ROOT/build/Time Note.app"
 VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist")"
-OUT="$ROOT/build/releases"
+OUT="$ROOT/build/releases/$VERSION"
 ZIP="TimeNote-$VERSION-macOS-universal.zip"
 codesign --verify --deep --strict "$APP"
 cmp "$ROOT/LICENSE" "$APP/Contents/Resources/LICENSE.txt"

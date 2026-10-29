@@ -55,6 +55,7 @@ func runNativeSmokeTest(in webView: WKWebView) {
               assert(state.records.some(r => r.title === '冒烟手动记录'), 'manual history restored');
               assert(Object.values(state.todos).flat().some(t => t.title === '冒烟待办' && t.done), 'completed todo restored');
               assert(Object.values(state.todos).flat().filter(t => t.title === '冒烟延续待办' && !t.done).length === 1, 'carried todo restored exactly once');
+              assert(state.categories.some(c=>c.name==='冒烟保留标签'&&c.color==='#d9f99d'), 'custom label restored on cold reopen');
               checks.push('cold process restart preserves independent timers, manual history and todo');
               window.timeNote.openRecord();
               await wait(() => document.querySelector('.running-card'), 'restored running UI');
@@ -109,6 +110,24 @@ func runNativeSmokeTest(in webView: WKWebView) {
             const today = new Date(), todayKey = [today.getFullYear(),String(today.getMonth()+1).padStart(2,'0'),String(today.getDate()).padStart(2,'0')].join('-');
             assert(carried.length === 1 && carried[0].day === todayKey && !carried[0].done, 'overdue todo carries forward through real native bridge');
             checks.push('overdue unfinished todo moves to today without duplication');
+            document.querySelector('#tools-toggle').click();document.querySelector('#manage-categories').click();
+            input('#category-name','冒烟自定义标签');document.querySelector('#category-palette [data-color="#fbcfe8"]').click();document.querySelector('#category-form').requestSubmit();
+            await wait(async ()=>(await load()).categories.some(c=>c.name==='冒烟自定义标签'), 'custom label add through UI');
+            await wait(()=>!document.querySelector('#category-save').disabled,'label add idle');
+            state=await load();const custom=state.categories.find(c=>c.name==='冒烟自定义标签');
+            Array.from(document.querySelectorAll('#category-list button')).find(b=>b.getAttribute('aria-label')==='修改标签 冒烟自定义标签').click();
+            input('#category-name','冒烟修改标签');document.querySelector('#category-palette [data-color="#bae6fd"]').click();document.querySelector('#category-form').requestSubmit();
+            await wait(async ()=>(await load()).categories.some(c=>c.id===custom.id&&c.name==='冒烟修改标签'&&c.color==='#bae6fd'),'custom label edit and palette commit');
+            await wait(()=>!document.querySelector('#category-save').disabled,'label edit idle');
+            state=await command({type:'manual',title:'冒烟标签记录',category:custom.id,categoryManual:true,start:Date.now()-600000,end:Date.now()-300000});
+            const customRecord=state.records.find(r=>r.title==='冒烟标签记录');
+            Array.from(document.querySelectorAll('#category-list button')).find(b=>b.getAttribute('aria-label')==='删除标签 冒烟修改标签').click();
+            document.querySelector('#confirm-ok').click();
+            await wait(async ()=>{const s=await load();return !s.categories.some(c=>c.id===custom.id)&&s.records.some(r=>r.id===customRecord.id&&r.category==='other');},'delete label keeps time record');
+            await wait(()=>!document.querySelector('#category-save').disabled,'label delete idle');document.querySelector('#category-close').click();
+            state=await command({type:'categoryAdd',name:'冒烟保留标签',color:'#d9f99d'});
+            checks.push('real label manager adds, renames, recolors and deletes with atomic record reassignment');
+
             state = await command({type:'start', title:'冒烟番茄 B', category:'work', categoryManual:false, mode:'pomodoro', minutes:1});
             let p = state.records.find(r => r.title === '冒烟番茄 B');
             assert(p.id !== a.id && p.runID !== a.runID, 'concurrent timers have distinct IDs');
@@ -134,9 +153,9 @@ func runNativeSmokeTest(in webView: WKWebView) {
             assert(p.end === deadline && state.records.find(r => r.id === a.id).end === null, 'expiry ends only its own run at exact deadline');
             checks.push('native polling expires only the due pomodoro and pushes updated UI');
             document.querySelector('#tab-week').click();
-            await wait(() => document.querySelectorAll('#category-summary .category-cell').length === 8, 'eight category summary');
+            await wait(() => document.querySelectorAll('#category-summary .category-cell').length === state.categories.length, 'dynamic category summary');
             assert(document.querySelectorAll('#week-days .week-row').length === 7, 'seven timeline rows');
-            checks.push('real committed data renders week timeline and all eight categories');
+            checks.push('real committed data renders week timeline and the dynamic category catalog');
             return {status:'passed', phase:'initial', checks, revision:state.revision, records:state.records.length, runIDs:state.records.filter(r=>r.runID).map(r=>r.runID)};
             """#
             let result = try await webView.callAsyncJavaScript(body, arguments: ["reopen": reopen], in: nil, contentWorld: .page)

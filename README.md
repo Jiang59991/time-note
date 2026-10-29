@@ -2,11 +2,13 @@
 
 <img src="design/assets/time-note-logo-v3.png" alt="Time Note" width="140">
 
-一个轻量的 Mac 时间便签：记录每天做了什么，用日览和周览查看时间分布。支持并发计时、番茄钟、补记和 Todo；数据保存在本机，无需注册。
+一个轻量的 Mac 时间便签：记录每天做了什么，用日览和周览查看时间分布。支持并发计时、番茄钟、补记、Todo 和可自定义名称／颜色的标签；数据保存在本机，无需注册。
+
+1.2.0 新增标签管理和“生活”标签，修复标题输入问题，并去掉任务边缘虚线。
 
 ## 下载与安装
 
-**[↓ 直接下载 Mac 安装包](https://github.com/Jiang59991/time-note/releases/download/v1.1.5/TimeNote-1.1.5-macOS-universal.zip)** · [Release 与版本说明](https://github.com/Jiang59991/time-note/releases/tag/v1.1.5)
+**[↓ 直接下载 Mac 安装包](https://github.com/Jiang59991/time-note/releases/download/v1.2.0/TimeNote-1.2.0-macOS-universal.zip)** · [Release 与版本说明](https://github.com/Jiang59991/time-note/releases/tag/v1.2.0)
 
 1. 点击上方下载，解压 ZIP。
 2. 把 **Time Note.app** 拖进“应用程序”文件夹，然后双击打开。
@@ -26,7 +28,7 @@
 
 **源码已公开，采用 [PolyForm Noncommercial 1.0.0 非商业许可证](LICENSE)，不可未经授权用于许可范围外的商业用途。** 具体条款及例外以 LICENSE 为准，请保留 [NOTICE](NOTICE)。
 
-Windows 用户可以从仓库的 **Code → Download ZIP** 或 [Release 源码包](https://github.com/Jiang59991/time-note/releases/download/v1.1.5/TimeNote-1.1.5-source.zip) 下载源码，交给 Codex 等助手协助移植为 Windows 版本；目前只有 Mac 安装包，移植需要开发和测试，不能保证自动转换成功。可参考 [源码与移植说明](INSTALL.md#源码开发与-windows-移植)。
+Windows 用户可以从仓库的 **Code → Download ZIP** 或 [Release 源码包](https://github.com/Jiang59991/time-note/releases/download/v1.2.0/TimeNote-1.2.0-source.zip) 下载源码，交给 Codex 等助手协助移植为 Windows 版本；目前只有 Mac 安装包，移植需要开发和测试，不能保证自动转换成功。可参考 [源码与移植说明](INSTALL.md#源码开发与-windows-移植)。
 
 ## 使用与反馈
 

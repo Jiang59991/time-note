@@ -5,6 +5,17 @@ final class NoteWindow: NSWindow {
     var compactMode = false
     override var canBecomeKey: Bool { !compactMode }
     override var canBecomeMain: Bool { !compactMode }
+
+    override func sendEvent(_ event: NSEvent) {
+        // Hover expansion intentionally stays non-key. A borderless WebKit window
+        // can otherwise accept a click without becoming the text input target.
+        // Activate only on a deliberate click, before WebKit processes its focus.
+        if !compactMode && event.type == .leftMouseDown {
+            if !NSApp.isActive { NSApp.activate(ignoringOtherApps: true) }
+            if !isKeyWindow { makeKeyAndOrderFront(nil) }
+        }
+        super.sendEvent(event)
+    }
 }
 
 /// Sits above WebKit but receives only the empty top strip and central date area.

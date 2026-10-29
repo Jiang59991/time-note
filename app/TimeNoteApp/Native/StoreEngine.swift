@@ -71,6 +71,7 @@ actor StoreEngine {
            let original = document.records.first(where: { $0.id == edit.id }),
            original.end == nil, original.mode == .pomodoro,
            let deadline = original.deadline, deadline <= nowMS {
+            try StoreValidation.category(edit.category, in: next)
             try StoreValidation.validateEditFields(edit, now: nowMS)
             next.revision = try StoreValidation.increment(document.revision)
             try commit(next)
@@ -164,6 +165,7 @@ actor StoreEngine {
     ) throws {
         switch command {
         case let .start(input):
+            try StoreValidation.category(input.category, in: value)
             let title = try StoreValidation.title(input.title, allowEmpty: true)
             let deadline = input.mode == .pomodoro
                 ? try StoreValidation.deadline(start: now, minutes: input.minutes) : nil
@@ -176,6 +178,7 @@ actor StoreEngine {
             try remember(input.title, category: input.category, manual: input.categoryManual, in: &value)
 
         case let .manual(input):
+            try StoreValidation.category(input.category, in: value)
             try StoreValidation.finishedInterval(start: input.start, end: input.end, now: now)
             let title = try StoreValidation.title(input.title, allowEmpty: true)
             value.records.append(StoreRecord(
@@ -187,6 +190,7 @@ actor StoreEngine {
             try remember(input.title, category: input.category, manual: input.categoryManual, in: &value)
 
         case let .edit(input):
+            try StoreValidation.category(input.category, in: value)
             try StoreValidation.validateEditFields(input, now: now)
             let originalRecord = try target(input.id, expected: input.expectedRevision, in: original)
             guard let index = value.records.firstIndex(where: { $0.id == input.id }) else {
@@ -280,6 +284,37 @@ actor StoreEngine {
             _ = try target(input.id, expected: input.expectedRevision, in: original)
             value.records.removeAll { $0.id == input.id }
 
+        case let .categoryAdd(name, color):
+            let name = try StoreValidation.categoryFields(name: name, color: color)
+            guard value.categories.count < 64 else { throw StoreEngineError.validation("最多保留 64 个标签。") }
+            guard !value.categories.contains(where: { StoreValidation.normalizedTitle($0.name) == StoreValidation.normalizedTitle(name) }) else { throw StoreEngineError.validation("已有同名标签。") }
+            let index = value.categories.firstIndex(where: { $0.id == "other" }) ?? value.categories.count
+            value.categories.insert(StoreCategory(id: UUID().uuidString, name: name, color: color, revision: 1), at: index)
+
+        case let .categoryEdit(id, expected, name, color):
+            guard let index = value.categories.firstIndex(where: { $0.id == id }) else { throw StoreEngineError.notFound("标签已不存在。") }
+            guard value.categories[index].revision == expected else { throw StoreEngineError.conflict("标签已更新，请重新选择后修改。") }
+            let name = try StoreValidation.categoryFields(name: name, color: color)
+            guard id != "other" || name == "其他" else { throw StoreEngineError.validation("兜底标签保留“其他”名称，可修改颜色。") }
+            guard !value.categories.contains(where: { $0.id != id && StoreValidation.normalizedTitle($0.name) == StoreValidation.normalizedTitle(name) }) else { throw StoreEngineError.validation("已有同名标签。") }
+            value.categories[index].name = name
+            value.categories[index].color = color
+            value.categories[index].revision = try StoreValidation.increment(expected)
+
+        case let .categoryDelete(id, expected):
+            guard id != "other" else { throw StoreEngineError.validation("其他是兜底标签，不能删除。") }
+            guard let index = value.categories.firstIndex(where: { $0.id == id }) else { throw StoreEngineError.notFound("标签已不存在。") }
+            guard value.categories[index].revision == expected else { throw StoreEngineError.conflict("标签已更新，请重新选择后删除。") }
+            let originalRevisions = Dictionary(uniqueKeysWithValues: original.records.map { ($0.id, $0.revision) })
+            for i in value.records.indices where value.records[i].category == id {
+                value.records[i].category = "other"
+                // Expiry and reassignment share one atomic transaction / row revision.
+                let oldRevision = originalRevisions[value.records[i].id]!
+                value.records[i].revision = try StoreValidation.increment(oldRevision)
+            }
+            for key in Array(value.categoryMemory.keys) where value.categoryMemory[key] == id { value.categoryMemory[key] = "other" }
+            value.categories.remove(at: index)
+
         case let .todoAdd(day, title):
             try StoreValidation.day(day)
             let cleaned = try StoreValidation.title(title, allowEmpty: false)
@@ -368,7 +403,7 @@ private enum StoreLimits {
     // The WKWebView bridge represents revisions as JavaScript Number. Never emit a
     // revision for which +1 or an optimistic-concurrency comparison loses precision.
     static let maximumRevision: Int64 = 9_007_199_254_740_991
-    static let categories: Set<String> = ["work", "create", "move", "rest", "sleep", "dining", "life", "other"]
+    static let categories: Set<String> = ["work", "create", "move", "rest", "sleep", "dining", "daily", "life", "other"]
 }
 
 enum StoreEngineError: LocalizedError {
@@ -444,6 +479,21 @@ private struct OperationReceipt: Codable {
     var committedAt: Double
 }
 
+private struct StoreCategory: Codable {
+    var id: String
+    var name: String
+    var color: String
+    var revision: Int64
+
+    static let palette = ["#bfdbfe", "#fecdd3", "#a7f3d0", "#fde68a", "#c6c8cc", "#fed7aa", "#d9f99d", "#99f6e4", "#ddd6fe", "#fbcfe8", "#bae6fd", "#e2e8f0"]
+    static var defaults: [StoreCategory] {
+        zip(["work", "create", "move", "rest", "sleep", "dining", "daily", "life", "other"],
+            zip(["科研", "自媒体", "运动", "娱乐", "睡眠", "餐饮", "生活", "杂事", "其他"], palette)).map {
+            StoreCategory(id: $0.0, name: $0.1.0, color: $0.1.1, revision: 0)
+        }
+    }
+}
+
 private struct StoreDocument: Codable {
     var schemaVersion: Int
     var revision: Int64
@@ -451,6 +501,7 @@ private struct StoreDocument: Codable {
     var todos: [String: [StoreTodo]]
     var categoryMemory: [String: String]
     var receipts: [OperationReceipt]
+    var categories: [StoreCategory] = StoreCategory.defaults
 
     static var empty: StoreDocument {
         StoreDocument(schemaVersion: StoreLimits.schemaVersion, revision: 0,
@@ -465,6 +516,8 @@ private struct StoreSnapshot: Encodable {
     let todos: [String: [StoreTodo]]
     let categoryMemory: [String: String]
     let now: Double
+    let categories: [StoreCategory]
+    let categoryPalette: [String]
 }
 
 private enum StoreCodec {
@@ -485,15 +538,22 @@ private enum StoreCodec {
     static func encodeSnapshot(_ value: StoreDocument, now: Double) throws -> Data {
         try encoder().encode(StoreSnapshot(schemaVersion: value.schemaVersion, revision: value.revision,
                                           records: value.records, todos: value.todos,
-                                          categoryMemory: value.categoryMemory, now: now))
+                                          categoryMemory: value.categoryMemory, now: now, categories: value.categories, categoryPalette: StoreCategory.palette))
     }
 
     static func decodeDocument(_ data: Data, validationNow: Double?) throws -> StoreDocument {
         guard !data.isEmpty, data.count <= StoreLimits.fileBytes else {
             throw StoreEngineError.validation("备份为空或超过 64 MB，无法安全导入。")
         }
-        let object = try StoreJSON.object(data)
-        try StoreJSON.keys(object, required: ["schemaVersion", "revision", "records", "todos", "categoryMemory", "receipts"])
+        var object = try StoreJSON.object(data)
+        try StoreJSON.keys(object, required: ["schemaVersion", "revision", "records", "todos", "categoryMemory", "receipts"], optional: ["categories"])
+        if object["categories"] == nil {
+            object["categories"] = try JSONSerialization.jsonObject(with: encoder().encode(StoreCategory.defaults))
+        }
+        guard let categories = object["categories"] as? [[String: Any]], (1...64).contains(categories.count) else {
+            throw StoreEngineError.validation("标签列表无效，最多保留 64 个标签。")
+        }
+        for category in categories { try StoreJSON.keys(category, required: ["id", "name", "color", "revision"]) }
         guard try StoreJSON.integer(object, "schemaVersion") == StoreLimits.schemaVersion else {
             throw StoreEngineError.unsupportedSchema
         }
@@ -517,7 +577,7 @@ private enum StoreCodec {
             try StoreJSON.keys(receipt, required: ["operationID", "canonicalPayload", "committedRevision", "committedAt"])
         }
         let decoded: StoreDocument
-        do { decoded = try JSONDecoder().decode(StoreDocument.self, from: data) }
+        do { decoded = try JSONDecoder().decode(StoreDocument.self, from: JSONSerialization.data(withJSONObject: object)) }
         catch { throw StoreEngineError.validation("备份字段类型不正确，无法读取。") }
         try StoreValidation.validate(decoded, now: validationNow)
         return decoded
@@ -576,8 +636,8 @@ private enum StoreValidation {
     }
 
     static func category(_ value: String) throws {
-        guard StoreLimits.categories.contains(value) else {
-            throw StoreEngineError.validation("分类无效，只能选择科研、自媒体、运动、娱乐、睡眠、餐饮、杂事或其他。")
+        guard StoreLimits.categories.contains(value) || UUID(uuidString: value) != nil else {
+            throw StoreEngineError.validation("标签编号无效。")
         }
     }
 
@@ -614,6 +674,18 @@ private enum StoreValidation {
         if let end = input.end { try finishedInterval(start: input.start, end: end, now: now) }
     }
 
+    static func category(_ id: String, in value: StoreDocument) throws {
+        guard value.categories.contains(where: { $0.id == id }) else { throw StoreEngineError.validation("标签已不存在，请重新选择。") }
+    }
+
+    static func categoryFields(name: String, color: String) throws -> String {
+        let cleaned = try title(name, allowEmpty: false)
+        guard cleaned.count <= 20, !cleaned.contains("\n"), !cleaned.contains("\r"), StoreCategory.palette.contains(color) else {
+            throw StoreEngineError.validation("标签名称最多 20 字，颜色请从预设色中选择。")
+        }
+        return cleaned
+    }
+
     static func validate(_ value: StoreDocument, now: Double?) throws {
         guard value.schemaVersion == StoreLimits.schemaVersion else { throw StoreEngineError.unsupportedSchema }
         guard value.revision >= 0, value.revision <= StoreLimits.maximumRevision,
@@ -622,14 +694,26 @@ private enum StoreValidation {
               value.receipts.count <= StoreLimits.receiptCount else {
             throw StoreEngineError.validation("数据版本、修订号或数量无效。")
         }
+        guard (1...64).contains(value.categories.count), value.categories.contains(where: { $0.id == "other" }) else {
+            throw StoreEngineError.validation("标签列表缺少兜底标签或超过容量。")
+        }
+        var categoryIDs = Set<String>(), categoryNames = Set<String>()
         var ids = Set<UUID>()
+        for row in value.categories {
+            try category(row.id)
+            let cleaned = try categoryFields(name: row.name, color: row.color)
+            guard cleaned == row.name, (row.id != "other" || row.name == "其他"), categoryIDs.insert(row.id).inserted,
+                  categoryNames.insert(normalizedTitle(row.name)).inserted,
+                  row.revision >= 0, row.revision <= value.revision else { throw StoreEngineError.validation("标签名称、编号或修订号重复或无效。") }
+            if let id = UUID(uuidString: row.id) { guard ids.insert(id).inserted else { throw StoreEngineError.validation("标签编号重复。") } }
+        }
         for record in value.records {
             guard ids.insert(record.id).inserted else { throw StoreEngineError.validation("备份中存在重复的记录编号。") }
             if let runID = record.runID {
                 guard ids.insert(runID).inserted else { throw StoreEngineError.validation("计时编号重复，无法确定记录所属任务。") }
             }
             _ = try title(record.title, allowEmpty: false)
-            try category(record.category)
+            try category(record.category, in: value)
             try timestamp(record.start)
             try minutes(record.minutes, for: record.mode)
             guard record.revision >= 0, record.revision <= value.revision else {
@@ -688,7 +772,7 @@ private enum StoreValidation {
             guard !title.isEmpty, title == normalizedTitle(title), title.count <= 500, !title.contains("\u{0000}") else {
                 throw StoreEngineError.validation("分类记忆的标题键格式无效。")
             }
-            try self.category(category)
+            try self.category(category, in: value)
         }
         var operationIDs = Set<UUID>()
         var lastRevision: Int64 = -1
@@ -720,6 +804,9 @@ private struct StoreCommand {
     enum Body {
         case start(Start), manual(Manual), edit(Edit), finish(Finish), delete(Target)
         case todoAdd(day: String, title: String), todoSet(TodoTarget, done: Bool), todoDelete(TodoTarget)
+        case categoryAdd(name: String, color: String)
+        case categoryEdit(id: String, expected: Int64, name: String, color: String)
+        case categoryDelete(id: String, expected: Int64)
     }
     let operationID: UUID
     let canonicalPayload: String
@@ -759,6 +846,15 @@ private struct StoreCommand {
         case "delete":
             try StoreJSON.keys(object, required: base.union(["id", "expectedRevision"]))
             body = .delete(Target(id: try StoreJSON.uuid(object, "id"), expectedRevision: try StoreJSON.integer(object, "expectedRevision")))
+        case "categoryAdd":
+            try StoreJSON.keys(object, required: base.union(["name", "color"]))
+            body = .categoryAdd(name: try StoreJSON.string(object, "name"), color: try StoreJSON.string(object, "color"))
+        case "categoryEdit":
+            try StoreJSON.keys(object, required: base.union(["id", "expectedRevision", "name", "color"]))
+            body = .categoryEdit(id: try StoreJSON.string(object, "id"), expected: try StoreJSON.integer(object, "expectedRevision"), name: try StoreJSON.string(object, "name"), color: try StoreJSON.string(object, "color"))
+        case "categoryDelete":
+            try StoreJSON.keys(object, required: base.union(["id", "expectedRevision"]))
+            body = .categoryDelete(id: try StoreJSON.string(object, "id"), expected: try StoreJSON.integer(object, "expectedRevision"))
         case "todoAdd":
             try StoreJSON.keys(object, required: base.union(["day", "title"]))
             body = .todoAdd(day: try StoreJSON.string(object, "day"), title: try StoreJSON.string(object, "title"))

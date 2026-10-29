@@ -1,10 +1,10 @@
 #!/bin/bash
 # Install the published binary. Never modifies the Time Note data directory.
 set -euo pipefail
-VERSION="1.1.5"
+VERSION="1.2.0"
 ASSET="TimeNote-$VERSION-macOS-universal.zip"
 BASE="https://github.com/Jiang59991/time-note/releases/download/v$VERSION"
-EXPECTED_SHA256="96d918264dc448b85d8295debc17e2d8839e3432508bb54b3224aa3a0edd2ae0"
+EXPECTED_SHA256="2c8d1c0f56da1da544485d7349b3c8a3bd8b7bd5936be55616e77e467d672529"
 DESTINATION="$HOME/Applications"
 if [ "${1:-}" = "--destination" ] && [ "$#" -eq 2 ]; then
   DESTINATION="$2"

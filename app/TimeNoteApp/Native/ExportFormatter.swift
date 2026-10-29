@@ -1,8 +1,15 @@
 import Foundation
 
 enum ExportFormatter {
-    static let categories = ["work": "科研", "create": "自媒体", "move": "运动", "rest": "娱乐", "sleep": "睡眠", "dining": "餐饮", "life": "杂事", "other": "其他"]
+    static let categories = ["work": "科研", "create": "自媒体", "move": "运动", "rest": "娱乐", "sleep": "睡眠", "dining": "餐饮", "daily": "生活", "life": "杂事", "other": "其他"]
+    private static func categoryNames(_ snapshot: [String: Any]) -> [String: String] {
+        guard let rows = snapshot["categories"] as? [[String: Any]] else { return categories }
+        return rows.reduce(into: [:]) { result, row in
+            if let id = row["id"] as? String, let name = row["name"] as? String { result[id] = name }
+        }
+    }
     static func csv(_ snapshot: [String: Any]) -> Data {
+        let categories = categoryNames(snapshot)
         var rows = [["类型", "ID", "事项", "分类", "开始时间", "结束时间", "分钟", "模式", "Todo 日期", "Todo 完成"]]
         let now = snapshot["now"] as? Double ?? Date().timeIntervalSince1970 * 1000
         for record in snapshot["records"] as? [[String: Any]] ?? [] {
@@ -22,6 +29,7 @@ enum ExportFormatter {
         return Data(("\u{FEFF}" + rows.map { $0.map(csvCell).joined(separator: ",") }.joined(separator: "\r\n") + "\r\n").utf8)
     }
     static func markdown(_ snapshot: [String: Any]) -> Data {
+        let categories = categoryNames(snapshot)
         var lines = ["# Time Note 导出", "", "导出时间：\(iso(Date().timeIntervalSince1970 * 1000))", "", "## 时间记录", "", "| 事项 | 分类 | 开始 | 结束 | 模式 |", "| --- | --- | --- | --- | --- |"]
         for record in snapshot["records"] as? [[String: Any]] ?? [] {
             lines.append("| \(md(record["title"] as? String ?? "")) | \(categories[record["category"] as? String ?? ""] ?? "其他") | \(iso(record["start"] as? Double ?? 0)) | \((record["end"] as? Double).map(iso) ?? "进行中") | \(record["mode"] as? String == "pomodoro" ? "番茄" : "正计时") |")
